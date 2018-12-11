@@ -16,17 +16,17 @@ namespace FactionsPro;
  * 
  */
 
-use pocketmine\plugin\PluginBase;
-use pocketmine\command\CommandSender;
+use pocketmine\block\Snow;
 use pocketmine\command\Command;
+use pocketmine\command\CommandSender;
 use pocketmine\event\Listener;
 use pocketmine\level\Level;
-use pocketmine\Player;
-use pocketmine\Server;
-use pocketmine\utils\TextFormat;
-use pocketmine\utils\Config;
-use pocketmine\block\Snow;
 use pocketmine\math\Vector3;
+use pocketmine\Player;
+use pocketmine\plugin\PluginBase;
+use pocketmine\Server;
+use pocketmine\utils\Config;
+use pocketmine\utils\TextFormat;
 
 class FactionMain extends PluginBase implements Listener {
 
@@ -50,6 +50,7 @@ class FactionMain extends PluginBase implements Listener {
             fwrite($file, $txt);
         }
 
+        $this->getServer()->getCommandMap()->register("f", new FactionCommands($this));
 
         $this->getServer()->getPluginManager()->registerEvents(new FactionListener($this), $this);
 
@@ -62,7 +63,6 @@ class FactionMain extends PluginBase implements Listener {
             $this->getLogger()->info("Add PureChat to display Faction ranks in chat");
         }
 
-        $this->fCommand = new FactionCommands($this);
 
         $this->prefs = new Config($this->getDataFolder() . "Prefs.yml", CONFIG::YAML, array(
             "MaxFactionNameLength" => 15,
@@ -85,13 +85,13 @@ class FactionMain extends PluginBase implements Listener {
             "AllowAlliedPvp" => false
         ));
 
-		$this->db = new \SQLite3($this->getDataFolder() . "FactionsPro.db");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS master (player TEXT PRIMARY KEY COLLATE NOCASE, faction TEXT, rank TEXT);");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS confirm (player TEXT PRIMARY KEY COLLATE NOCASE, faction TEXT, invitedby TEXT, timestamp INT);");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS motdrcv (player TEXT PRIMARY KEY, timestamp INT);");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS motd (faction TEXT PRIMARY KEY, message TEXT);");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS plots(faction TEXT PRIMARY KEY, x1 INT, z1 INT, x2 INT, z2 INT, world TEXT);");
-		$this->db->exec("CREATE TABLE IF NOT EXISTS home(faction TEXT PRIMARY KEY, x INT, y INT, z INT, world VARCHAR);");
+        $this->db = new \SQLite3($this->getDataFolder() . "FactionsPro.db");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS master (player TEXT PRIMARY KEY COLLATE NOCASE, faction TEXT, rank TEXT);");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS confirm (player TEXT PRIMARY KEY COLLATE NOCASE, faction TEXT, invitedby TEXT, timestamp INT);");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS motdrcv (player TEXT PRIMARY KEY, timestamp INT);");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS motd (faction TEXT PRIMARY KEY, message TEXT);");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS plots(faction TEXT PRIMARY KEY, x1 INT, z1 INT, x2 INT, z2 INT, world TEXT);");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS home(faction TEXT PRIMARY KEY, x INT, y INT, z INT, world VARCHAR);");
 
 
         $this->db = new \SQLite3($this->getDataFolder() . "FactionsPro.db");
@@ -107,15 +107,11 @@ class FactionMain extends PluginBase implements Listener {
         $this->db->exec("CREATE TABLE IF NOT EXISTS enemies(ID INT PRIMARY KEY,faction1 TEXT, faction2 TEXT);");
         $this->db->exec("CREATE TABLE IF NOT EXISTS alliescountlimit(faction TEXT PRIMARY KEY, count INT);");
 
-        try{
+        try {
             $this->db->exec("ALTER TABLE plots ADD COLUMN world TEXT default null");
             Server::getInstance()->getLogger()->info(TextFormat::GREEN . "FactionPro: Added 'world' column to plots");
-        }catch(\ErrorException $ex){
+        } catch (\ErrorException $ex) {
         }
-    }
-
-    public function onCommand(CommandSender $sender, Command $command, string $label, array $args) :bool {
-        return $this->fCommand->onCommand($sender, $command, $label, $args);
     }
 
     public function setEnemies($faction1, $faction2) {
@@ -125,12 +121,12 @@ class FactionMain extends PluginBase implements Listener {
         $stmt->execute();
     }
 
-	public function unsetEnemies($faction1, $faction2) {
-		$stmt = $this->db->prepare("DELETE FROM enemies WHERE (faction1 = :faction1 AND faction2 = :faction2) OR (faction1 = :faction2 AND faction2 = :faction1);");
-		$stmt->bindValue(":faction1", $faction1);
-		$stmt->bindValue(":faction2", $faction2);
-		$stmt->execute();
-	}
+    public function unsetEnemies($faction1, $faction2) {
+        $stmt = $this->db->prepare("DELETE FROM enemies WHERE (faction1 = :faction1 AND faction2 = :faction2) OR (faction1 = :faction2 AND faction2 = :faction1);");
+        $stmt->bindValue(":faction1", $faction1);
+        $stmt->bindValue(":faction2", $faction2);
+        $stmt->execute();
+    }
 
     public function areEnemies($faction1, $faction2) {
         $result = $this->db->query("SELECT ID FROM enemies WHERE (faction1 = '$faction1' AND faction2 = '$faction2') OR (faction1 = '$faction2' AND faction2 = '$faction1');");
@@ -185,7 +181,7 @@ class FactionMain extends PluginBase implements Listener {
         while ($resultArr = $result->fetchArray(SQLITE3_ASSOC)) {
             $i = $i + 1;
         }
-        $stmt->bindValue(":count", (int) $i);
+        $stmt->bindValue(":count", (int)$i);
         $stmt->execute();
     }
 
@@ -193,11 +189,11 @@ class FactionMain extends PluginBase implements Listener {
 
         $result = $this->db->query("SELECT count FROM alliescountlimit WHERE faction = '$faction';");
         $resultArr = $result->fetchArray(SQLITE3_ASSOC);
-        return (int) $resultArr["count"];
+        return (int)$resultArr["count"];
     }
 
     public function getAlliesLimit() {
-        return (int) $this->prefs->get("AllyLimitPerFaction");
+        return (int)$this->prefs->get("AllyLimitPerFaction");
     }
 
     public function deleteAllies($faction1, $faction2) {
@@ -208,7 +204,7 @@ class FactionMain extends PluginBase implements Listener {
     public function getFactionPower($faction) {
         $result = $this->db->query("SELECT power FROM strength WHERE faction = '$faction';");
         $resultArr = $result->fetchArray(SQLITE3_ASSOC);
-        return (int) $resultArr["power"];
+        return (int)$resultArr["power"];
     }
 
     public function addFactionPower($faction, $power) {
@@ -285,13 +281,13 @@ class FactionMain extends PluginBase implements Listener {
             $team .= TextFormat::ITALIC . TextFormat::RED . $alliedFaction . TextFormat::RESET . TextFormat::WHITE . "||" . TextFormat::RESET;
             $i = $i + 1;
         }
-		if($i > 0) {
-			$s->sendMessage($this->formatMessage("~ Allies of *$faction* ~", true));
-			$s->sendMessage($team);
-		} else {
-			$s->sendMessage($this->formatMessage("~ *$faction* has no allies ~", true));
-		}
-	}
+        if ($i > 0) {
+            $s->sendMessage($this->formatMessage("~ Allies of *$faction* ~", true));
+            $s->sendMessage($team);
+        } else {
+            $s->sendMessage($this->formatMessage("~ *$faction* has no allies ~", true));
+        }
+    }
 
     public function sendListOfTop10FactionsTo($s) {
         $result = $this->db->query("SELECT faction FROM strength ORDER BY power DESC LIMIT 10;");
@@ -417,7 +413,7 @@ class FactionMain extends PluginBase implements Listener {
     }
 
     public function cornerIsInPlot($x1, $z1, $x2, $z2, string $level) {
-        return($this->pointIsInPlot($x1, $z1, $level) || $this->pointIsInPlot($x1, $z2, $level) || $this->pointIsInPlot($x2, $z1, $level) || $this->pointIsInPlot($x2, $z2, $level));
+        return ($this->pointIsInPlot($x1, $z1, $level) || $this->pointIsInPlot($x1, $z2, $level) || $this->pointIsInPlot($x2, $z1, $level) || $this->pointIsInPlot($x2, $z2, $level));
     }
 
     public function formatMessage($string, $confirm = false) {
@@ -453,14 +449,14 @@ class FactionMain extends PluginBase implements Listener {
         $p = $this->getServer()->getPlayer($playername);
         $f = $this->getPlayerFaction($playername);
         if (!$this->isInFaction($playername)) {
-            if(isset($this->purechat)){
+            if (isset($this->purechat)) {
                 $levelName = $this->purechat->getConfig()->get("enable-multiworld-chat") ? $p->getLevel()->getName() : null;
                 $nameTag = $this->purechat->getNametag($p, $levelName);
                 $p->setNameTag($nameTag);
-            }else{
+            } else {
                 $p->setNameTag(TextFormat::ITALIC . TextFormat::YELLOW . "<$playername>");
             }
-        }elseif(isset($this->purechat)) {
+        } elseif (isset($this->purechat)) {
             $levelName = $this->purechat->getConfig()->get("enable-multiworld-chat") ? $p->getLevel()->getName() : null;
             $nameTag = $this->purechat->getNametag($p, $levelName);
             $p->setNameTag($nameTag);

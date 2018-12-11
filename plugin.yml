@@ -6,11 +6,3 @@ main: FactionsPro\FactionMain
 api: [3.0.0]
 softdepend: ["PureChat", "AntiSpamPro"]
 extensions: [sqlite3]
-commands:
-  f:
-    description: use /f help for all parameters
-    permission: f.command
-permissions:
-  f.command:
-    default: true
-    description: "Allow use of all faction commands"
