@@ -5,7 +5,9 @@ namespace FactionsPro;
 
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
+use pocketmine\level\Position;
 use pocketmine\Player;
+use pocketmine\Server;
 use pocketmine\utils\TextFormat as TF;
 
 class FactionCommands extends Command {
@@ -169,10 +171,58 @@ class FactionCommands extends Command {
                         $sender->sendMessage(TF::GREEN . "$invitedName has been invited");
                         $invited->sendMessage(TF::GREEN . "You have been invited to $factionName. Type '/f accept' or '/f deny' into chat to accept or deny!");
                         break;
+                    /////////////////////////////// ACCEPT ///////////////////////////////
+                    case "accept":
+                        $lowercaseName = strtolower($playerName);
+                        $result = $this->plugin->db->query("SELECT * FROM confirm WHERE player='$lowercaseName';");
+                        $array = $result->fetchArray(SQLITE3_ASSOC);
+                        if (empty($array) == true) {
+                            $sender->sendMessage(TF::RED . "You have not been invited to any factions");
+                            return true;
+                        }
+                        $invitedTime = $array["timestamp"];
+                        $currentTime = time();
+                        if (($currentTime - $invitedTime) <= 60) { //This should be configurable
+                            $faction = $array["faction"];
+                            $stmt = $this->plugin->db->prepare("INSERT OR REPLACE INTO master (player, faction, rank) VALUES (:player, :faction, :rank);");
+                            $stmt->bindValue(":player", ($playerName));
+                            $stmt->bindValue(":faction", $faction);
+                            $stmt->bindValue(":rank", "Member");
+                            $result = $stmt->execute();
+                            $this->plugin->db->query("DELETE FROM confirm WHERE player='$lowercaseName';");
+                            $sender->sendMessage(TF::GREEN . "You successfully joined $faction");
+                            $this->plugin->addFactionPower($faction, $this->plugin->prefs->get("PowerGainedPerPlayerInFaction"));
+                            $this->plugin->getServer()->getPlayerExact($array["invitedby"])->sendMessage($this->plugin->formatMessage("$playerName joined the faction", true));
+                            $this->plugin->updateTag($sender->getName());
+                        } else {
+                            $sender->sendMessage(TF::RED . "Invite has timed out");
+                            $this->plugin->db->query("DELETE FROM confirm WHERE player='$playerName';");
+                        }
+                        break;
+                    /////////////////////////////// DENY ///////////////////////////////
+                    case "deny":
+                        $lowercaseName = strtolower($playerName);
+                        $result = $this->plugin->db->query("SELECT * FROM confirm WHERE player='$lowercaseName';");
+                        $array = $result->fetchArray(SQLITE3_ASSOC);
+                        if (empty($array) == true) {
+                            $sender->sendMessage($this->plugin->formatMessage("You have not been invited to any factions"));
+                            return true;
+                        }
+                        $invitedTime = $array["timestamp"];
+                        $currentTime = time();
+                        if (($currentTime - $invitedTime) <= 60) { //This should be configurable
+                            $this->plugin->db->query("DELETE FROM confirm WHERE player='$lowercaseName';");
+                            $sender->sendMessage(TF::RED . "Invite declined");
+                            $this->plugin->getServer()->getPlayerExact($array["invitedby"])->sendMessage(TF::YELLOW . "$playerName declined the invitation");
+                        } else {
+                            $sender->sendMessage(TF::RED . "Invite has timed out");
+                            $this->plugin->db->query("DELETE FROM confirm WHERE player='$lowercaseName';");
+                        }
+                        break;
                     /////////////////////////////// LEADER ///////////////////////////////
                     case "leader":
                         if (!isset($args[1])) {
-                            $sender->sendMessage(TF::RED . "/f leader <player>");
+                            $sender->sendMessage(TF::YELLOW . "/f leader <player>");
                             return true;
                         }
                         if (!$this->plugin->isInFaction($sender->getName())) {
@@ -206,10 +256,69 @@ class FactionCommands extends Command {
                         $stmt->bindValue(":faction", $factionName);
                         $stmt->bindValue(":rank", "Leader");
                         $result = $stmt->execute();
-                        $sender->sendMessage(TF::YELLOW . "You are no longer leader of " . $factionName);
-                        $this->plugin->getServer()->getPlayerExact($args[1])->sendMessage(TF::RED . "You are now leader \nof $factionName!");
+                        $sender->sendMessage(TF::RED . "You are no longer leader of " . $factionName);
+                        $this->plugin->getServer()->getPlayerExact($args[1])->sendMessage(TF::GREEN . "You are now leader \nof $factionName!");
                         $this->plugin->updateTag($sender->getName());
                         $this->plugin->updateTag($this->plugin->getServer()->getPlayerExact($args[1])->getName());
+                        break;
+                    /////////////////////////////// SETHOME ///////////////////////////////
+                    case "sethome":
+                        if (!$this->plugin->isInFaction($playerName)) {
+                            $sender->sendMessage(TF::RED . "You must be in a faction to do this");
+                            return true;
+                        }
+                        if (!$this->plugin->isLeader($playerName)) {
+                            $sender->sendMessage(TF::RED . "You must be leader to set home");
+                            return true;
+                        }
+                        $factionName = $this->plugin->getPlayerFaction($sender->getName());
+                        $stmt = $this->plugin->db->prepare("INSERT OR REPLACE INTO home (faction, x, y, z, world) VALUES (:faction, :x, :y, :z, :world);");
+                        $stmt->bindValue(":faction", $factionName);
+                        $stmt->bindValue(":x", $sender->getX());
+                        $stmt->bindValue(":y", $sender->getY());
+                        $stmt->bindValue(":z", $sender->getZ());
+                        $stmt->bindValue(":world", $sender->getLevel()->getName());
+                        $result = $stmt->execute();
+                        $sender->sendMessage(TF::GREEN . "Home set");
+                        break;
+                    /////////////////////////////// HOME ///////////////////////////////
+                    case "home":
+                        if (!$this->plugin->isInFaction($playerName)) {
+                            $sender->sendMessage($this->plugin->formatMessage("You must be in a faction to do this"));
+                            return true;
+                        }
+                        $faction = $this->plugin->getPlayerFaction($sender->getName());
+                        $result = $this->plugin->db->query("SELECT * FROM home WHERE faction = '$faction';");
+                        $array = $result->fetchArray(SQLITE3_ASSOC);
+                        if (!empty($array)) {
+                            if ($array['world'] === null || $array['world'] === "") {
+                                $sender->sendMessage(TF::RED . "Home is missing world name, please delete and make it again");
+                                return true;
+                            }
+                            if (Server::getInstance()->loadLevel($array['world']) === false) {
+                                $sender->sendMessage(TF::RED . "The world '" . $array['world'] . "'' could not be found");
+                                return true;
+                            }
+                            $level = Server::getInstance()->getLevelByName($array['world']);
+                            $sender->getPlayer()->teleport(new Position($array['x'], $array['y'], $array['z'], $level));
+                            $sender->sendMessage(TF::GREEN . "Teleported home", true);
+                        } else {
+                            $sender->sendMessage(TF::RED . "Home is not set");
+                        }
+                        break;
+                    /////////////////////////////// UNSETHOME ///////////////////////////////
+                    case "unsethome":
+                        if (!$this->plugin->isInFaction($playerName)) {
+                            $sender->sendMessage(TF::RED . "You must be in a faction to do this");
+                            return true;
+                        }
+                        if (!$this->plugin->isLeader($playerName)) {
+                            $sender->sendMessage(TF::RED . "You must be leader to unset home");
+                            return true;
+                        }
+                        $faction = $this->plugin->getPlayerFaction($sender->getName());
+                        $this->plugin->db->query("DELETE FROM home WHERE faction = '$faction';");
+                        $sender->sendMessage(TF::GREEN . "Home unset", true);
                         break;
                 }
             }
